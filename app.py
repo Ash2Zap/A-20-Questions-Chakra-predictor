@@ -333,7 +333,7 @@ if conf >= stop_threshold or len(asked_ids) >= len(QUESTIONS):
         st.session_state.posterior = normalize({c: 1.0 for c in CHAKRAS})
         st.session_state.asked = []
         st.session_state.answers = {}
-        st.experimental_rerun()
+        st.rerun()
 else:
     next_q = choose_next_question(asked_ids, posterior)
     if next_q is None:
@@ -357,7 +357,7 @@ else:
             st.session_state.asked.append(next_q["id"])
             st.session_state.answers[next_q["id"]] = chosen
             st.session_state.posterior = update_posterior(posterior, next_q["id"], chosen)
-            st.experimental_rerun()
+            st.rerun()
 
 # -----------------------------
 # Sidebar: Session Log & Export
