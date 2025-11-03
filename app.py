@@ -1,4 +1,4 @@
-# app.py — Chakra Insight (Bayesian 20Q) with PDF + Logo + Crystal Links + Birth Hint
+# app.py — Chakra Insight (Bayesian 20Q) + PDF + Logo + Crystal Links + Birth Hint + Summary + Fixes
 import streamlit as st
 import math, io, random, datetime
 from typing import Dict, List
@@ -10,7 +10,6 @@ st.set_page_config(page_title="Chakra Insight – 20Q-style", page_icon="🔮", 
 # -----------------------------
 LOGO_URL = "https://ik.imagekit.io/86edsgbur/Untitled%20design%20(73)%20(3)%20(1).jpg?updatedAt=1759258123716"
 
-# Chakra color map (Root→Crown)
 CHAKRA_COLORS = {
     "Root (Muladhara)": "#E53935",
     "Sacral (Svadhisthana)": "#FB8C00",
@@ -19,6 +18,15 @@ CHAKRA_COLORS = {
     "Throat (Vishuddha)": "#1E88E5",
     "Third Eye (Ajna)": "#5E35B1",
     "Crown (Sahasrara)": "#8E24AA",
+}
+CHAKRA_COLOR_NAMES = {
+    "Root (Muladhara)": "Red",
+    "Sacral (Svadhisthana)": "Orange",
+    "Solar Plexus (Manipura)": "Yellow",
+    "Heart (Anahata)": "Green",
+    "Throat (Vishuddha)": "Blue",
+    "Third Eye (Ajna)": "Indigo",
+    "Crown (Sahasrara)": "Violet",
 }
 
 # -----------------------------
@@ -51,7 +59,6 @@ CHAKRAS = [
     "Crown (Sahasrara)",
 ]
 
-# Likelihoods: P(yes | chakra, question)
 LIKELIHOODS: Dict[str, Dict[str, float]] = {
     "Root (Muladhara)": {
         "safety_finance": 0.9, "body_pain_legs": 0.8, "guilt_shame": 0.2, "creativity_flow": 0.3,
@@ -97,7 +104,6 @@ LIKELIHOODS: Dict[str, Dict[str, float]] = {
     },
 }
 
-# Remedies + richer guidance + shop links (edit links when you want!)
 REMEDIES: Dict[str, Dict[str, str]] = {
     "Root (Muladhara)": {
         "why": "Safety, survival, and belonging themes dominate. Body seeks ground and routine.",
@@ -229,13 +235,34 @@ def update_posterior(posterior: Dict[str, float], qid: str, answer: str) -> Dict
         updated[c] = posterior[c] * like
     return normalize(updated)
 
-# Birth-date based soft suggestion (fun extra)
 def chakra_from_birth(dob: datetime.date | None) -> str | None:
     if not dob:
         return None
-    # Simple 1–7 mapping based on day+month
     idx = ((dob.day + dob.month) % 7) or 7
     return CHAKRAS[idx - 1]
+
+def make_summary(name: str, birth_chakra: str | None, winner: str, ordered: List):
+    # ordered = list of (chakra, prob) sorted desc
+    top2 = ordered[1][0] if len(ordered) > 1 else None
+    lines = []
+    who = name or "Dear Soul"
+    if birth_chakra:
+        lines.append(f"{who}, your birth energy gently leans toward **{birth_chakra}**.")
+    lines.append(
+        f"Today’s answers highlight **{winner}** as the primary chakra to balance, "
+        f"with {top2} offering a supportive theme." if top2 else
+        f"Today’s answers highlight **{winner}** as the primary chakra to balance."
+    )
+    lines.append(
+        f"Your power color for the day is **{CHAKRA_COLOR_NAMES[winner]}** — keep it close (clothes, journal, or a tiny swatch)."
+    )
+    lines.append(
+        f"Crystal allies: **{REMEDIES[winner]['crystal']}**. Affirm: _{REMEDIES[winner]['affirm']}_"
+    )
+    lines.append(
+        "Tiny plan: 7 minutes of practice → 3 minutes breath, 2 minutes movement, 2 minutes journaling."
+    )
+    return " ".join(lines)
 
 # -----------------------------
 # State
@@ -250,10 +277,10 @@ if "answers" not in st.session_state:
 # -----------------------------
 # Header + User Details
 # -----------------------------
-header_left, header_right = st.columns([0.35, 0.65])
-with header_left:
+left, right = st.columns([0.35, 0.65])
+with left:
     st.image(LOGO_URL, width=220)
-with header_right:
+with right:
     st.markdown("# 🔮 Chakra Insight – Interactive Predictor")
     st.markdown("Answer a few quick questions. We update probabilities live and infer your **primary chakra to balance**.")
 
@@ -261,7 +288,8 @@ st.markdown("### 🌸 Enter Your Details")
 name = st.text_input("Full Name")
 email = st.text_input("Email Address")
 phone = st.text_input("Phone Number")
-dob = st.date_input("Birth Date", value=None)
+today = datetime.date.today()
+dob = st.date_input("Birth Date", value=None, min_value=datetime.date(1900, 1, 1), max_value=today)
 
 birth_chakra = chakra_from_birth(dob)
 if birth_chakra:
@@ -273,16 +301,14 @@ if birth_chakra:
 
 posterior = st.session_state.posterior
 asked_ids = set(st.session_state.asked)
-
-# Auto-stop threshold (hidden in UI)
 stop_threshold = 0.88
 
-# Colored, branded probability bars
+# Prob bars
 st.subheader("Current Probabilities")
-for name_c, p in posterior.items():
+for c_name, p in posterior.items():
     pct = f"{p*100:.1f}%"
-    bar = f"<div style='background:{CHAKRA_COLORS[name_c]};height:16px;width:{p*100}%;border-radius:8px'></div>"
-    st.markdown(f"**{name_c}** — {pct}")
+    bar = f"<div style='background:{CHAKRA_COLORS[c_name]};height:16px;width:{p*100}%;border-radius:8px'></div>"
+    st.markdown(f"**{c_name}** — {pct}")
     st.markdown(bar, unsafe_allow_html=True)
     st.markdown("")
 
@@ -292,8 +318,14 @@ conf = posterior[winner]
 
 if conf >= stop_threshold or len(asked_ids) >= len(QUESTIONS):
     st.success(f"Top Insight: **{winner}** (confidence {conf:.2%})")
+    ordered = sorted(posterior.items(), key=lambda kv: kv[1], reverse=True)
 
-    # Personalized Guidance (rich)
+    # Soulful Summary (astro-style narrative)
+    summary_text = make_summary(name or "Dear Soul", birth_chakra, winner, ordered)
+    st.markdown("### ✨ Soulful Summary")
+    st.write(summary_text)
+
+    # Guidance block
     data = REMEDIES[winner]
     with st.expander("Personalized Guidance (Why / What to do / Crystal / Affirmation)", expanded=True):
         st.markdown(f"**Why now:** {data['why']}")
@@ -310,93 +342,118 @@ if conf >= stop_threshold or len(asked_ids) >= len(QUESTIONS):
             st.markdown(f"**Journal prompt:** {data['journal']}")
         st.markdown(f"**Mini-ritual:** {data['ritual']}")
 
-    # Surprise Insight (seeded so it's consistent for same answers)
+    # Surprise Insight (with color name + swatch)
     seed = hash(str(st.session_state.answers)) % (10**8)
     rnd = random.Random(seed)
+    color_name = CHAKRA_COLOR_NAMES[winner]
+    color_hex = CHAKRA_COLORS[winner]
+    swatch = f"<span style='background:{color_hex};display:inline-block;width:14px;height:14px;border-radius:3px;margin:0 6px -2px 6px'></span>"
     surprise_bits = [
         f"Bīja mantra cadence today: **{('LAM','VAM','RAM','YAM','HAM','OM','OM')[CHAKRAS.index(winner)]}** — slow 6×18.",
         f"Best 7-minute window: **{rnd.choice(['morning light','noon sun','sunset glow','pre-sleep quiet'])}**.",
-        f"Power color: **{CHAKRA_COLORS[winner]}** — wear/use it today.",
+        f"Power color: **{color_name}** {swatch} (use it on your body or desk).",
         f"Kind challenge: **{rnd.choice(['send a gratitude text','drink warm water hourly','walk barefoot 3 minutes','set one loving boundary'])}**.",
     ]
-    st.info("\n".join(["**Surprise Insight**:"] + [f"• {s}" for s in surprise_bits]))
+    st.info("\n".join(["**Surprise Insight**:"] + [f"• {s}" for s in surprise_bits]), icon="✨")
 
+    # Overview
     st.markdown("---")
     st.subheader("All Chakras – Colored Overview")
-    ordered = sorted(posterior.items(), key=lambda kv: kv[1], reverse=True)
-    for name_c, p in ordered:
+    for c_name, p in ordered:
         pct = f"{p*100:.1f}%"
-        chip = f"<span style='background:{CHAKRA_COLORS[name_c]};padding:4px 10px;border-radius:999px;color:white'>{name_c}</span>"
+        chip = f"<span style='background:{CHAKRA_COLORS[c_name]};padding:4px 10px;border-radius:999px;color:white'>{CHAKRA_COLOR_NAMES[c_name]} • {c_name}</span>"
         st.markdown(f"{chip} — **{pct}**", unsafe_allow_html=True)
         st.caption(
-            f"Why: {REMEDIES[name_c]['why']}  |  Affirmation: {REMEDIES[name_c]['affirm']}  |  "
-            f"Crystals: {REMEDIES[name_c]['crystal']}  |  Shop: {REMEDIES[name_c]['link']}"
+            f"Why: {REMEDIES[c_name]['why']}  |  Affirmation: {REMEDIES[c_name]['affirm']}  |  "
+            f"Crystals: {REMEDIES[c_name]['crystal']}  |  Shop: {REMEDIES[c_name]['link']}"
         )
 
-    # -------- PDF Report --------
+    # -------- PDF Report (with proper wrapping + margins) --------
     from reportlab.pdfgen import canvas as pdfcanvas
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors as rlcolors
     from reportlab.lib.utils import ImageReader
-    from reportlab.platypus import Paragraph, Frame
+    from reportlab.platypus import Paragraph, Frame, KeepInFrame
     from reportlab.lib.styles import getSampleStyleSheet
+
+    def pdf_color(hexcol):
+        r = int(hexcol[1:3],16)/255; g = int(hexcol[3:5],16)/255; b = int(hexcol[5:7],16)/255
+        return rlcolors.Color(r,g,b)
 
     def generate_pdf(buf: io.BytesIO):
         W, H = A4
+        MLEFT, MRIGHT, MTOP, MBOT = 40, 40, 40, 40
         c = pdfcanvas.Canvas(buf, pagesize=A4)
 
-        # Logo
+        # Header
         try:
             img = ImageReader(LOGO_URL)
-            c.drawImage(img, 40, H-120, width=160, height=80, preserveAspectRatio=True, mask='auto')
+            c.drawImage(img, MLEFT, H-MTOP-60, width=160, height=60, preserveAspectRatio=True, mask='auto')
         except Exception:
             pass
-
-        # Title + user details
-        c.setFont("Helvetica-Bold", 18); c.drawString(220, H-70, "Chakra Insight Report")
+        c.setFont("Helvetica-Bold", 18); c.drawString(MLEFT+180, H-MTOP-10, "Chakra Insight Report")
         c.setFont("Helvetica", 10)
-        c.drawString(220, H-85, f"Top Insight: {winner} (confidence {conf:.0%})")
-        c.drawString(40, H-105, f"Name: {name or '-'}")
-        c.drawString(220, H-105, f"Email: {email or '-'}")
-        c.drawString(400, H-105, f"DOB: {dob if dob else '-'}")
+        c.drawString(MLEFT+180, H-MTOP-25, f"Top Insight: {winner} (confidence {conf:.0%})")
+        c.drawString(MLEFT, H-MTOP-85, f"Name: {name or '-'}")
+        c.drawString(MLEFT+180, H-MTOP-85, f"Email: {email or '-'}")
+        c.drawString(MLEFT+360, H-MTOP-85, f"DOB: {dob if dob else '-'}")
 
         # Bars
-        c.setFont("Helvetica-Bold", 12); c.drawString(40, H-140, "Profile")
-        y = H-160
-        for name_c, p in ordered:
+        c.setFont("Helvetica-Bold", 12); c.drawString(MLEFT, H-MTOP-105, "Profile")
+        y = H-MTOP-120
+        for c_name, p in ordered:
             pct = int(p*100)
-            c.setFont("Helvetica", 10); c.drawString(40, y+4, name_c)
-            c.setFillColor(rlcolors.Color(0.9,0.9,0.9)); c.roundRect(200, y, 300, 12, 4, fill=True, stroke=0)
-            hexcol = CHAKRA_COLORS[name_c]
-            r = int(hexcol[1:3],16)/255; g = int(hexcol[3:5],16)/255; b = int(hexcol[5:7],16)/255
-            c.setFillColor(rlcolors.Color(r,g,b))
-            c.roundRect(200, y, 3*pct, 12, 4, fill=True, stroke=0)
-            c.setFillColor(rlcolors.black); c.drawRightString(510, y+4, f"{pct}%")
+            c.setFont("Helvetica", 10); c.drawString(MLEFT, y+4, c_name)
+            c.setFillColor(rlcolors.Color(0.92,0.92,0.92)); c.roundRect(MLEFT+160, y, 300, 12, 4, fill=True, stroke=0)
+            c.setFillColor(pdf_color(CHAKRA_COLORS[c_name])); c.roundRect(MLEFT+160, y, 3*pct, 12, 4, fill=True, stroke=0)
+            c.setFillColor(rlcolors.black); c.drawRightString(MLEFT+470, y+4, f"{pct}%")
             y -= 18
 
-        # Guidance (winner)
-        style = getSampleStyleSheet()['BodyText']; style.fontName = 'Helvetica'
-        def write_wrap(label, text, width=480, height=60):
-            nonlocal y
-            c.setFont("Helvetica-Bold", 10); c.drawString(40, y, f"{label}: ")
-            p = Paragraph(text.replace("\n", " "), style)
-            f = Frame(100, y-2, width, height, showBoundary=0)
-            h = p.wrap(width, height)[1]
-            f._y1 = y + h
-            f.addFromList([p], c)
-            y -= max(24, h+6)
+        # Soulful Summary
+        style = getSampleStyleSheet()['BodyText']; style.fontName = 'Helvetica'; style.leading = 13
+        c.setFont("Helvetica-Bold", 12); c.drawString(MLEFT, y-10, "Soulful Summary")
+        y -= 26
+        def draw_paragraph(text, y, height=80):
+            p = Paragraph(text.replace("\n"," "), style)
+            frame = Frame(MLEFT, y-height, W-MLEFT-MRIGHT, height, showBoundary=0)
+            req_h = p.wrap(W-MLEFT-MRIGHT, height)[1]
+            if y - req_h < MBOT + 40:
+                c.showPage();  # new page header minimal
+                return H-MTOP-40, p
+            frame.addFromList([p], c)
+            return y - max(24, req_h+6), None
 
-        c.setFont("Helvetica-Bold", 12); c.drawString(40, y-10, "Personalized Guidance"); y -= 26
+        y, _ = draw_paragraph(summary_text, y, height=90)
+
+        # Guidance (ordered labels, auto page-break)
+        c.setFont("Helvetica-Bold", 12); c.drawString(MLEFT, y-10, "Personalized Guidance")
+        y -= 26
+
+        def draw_label_value(label, value, y, height=60):
+            p = Paragraph(f"<b>{label}:</b> {value}", style)
+            frame = Frame(MLEFT, y-height, W-MLEFT-MRIGHT, height, showBoundary=0)
+            req_h = p.wrap(W-MLEFT-MRIGHT, height)[1]
+            if y - req_h < MBOT + 40:
+                c.showPage();  # start fresh section header on new page
+                # (Re-draw section title on new page)
+                c.setFont("Helvetica-Bold", 12); c.drawString(MLEFT, H-MTOP-40, "Personalized Guidance")
+                _y = H-MTOP-60
+                frame = Frame(MLEFT, _y-height, W-MLEFT-MRIGHT, height, showBoundary=0)
+                frame.addFromList([p], c)
+                return _y - max(24, req_h+6)
+            frame.addFromList([p], c)
+            return y - max(24, req_h+6)
+
         d = REMEDIES[winner]
-        write_wrap("Why now", d["why"])
-        write_wrap("Do this next", d["do"])
-        write_wrap("Crystal", f"{d['crystal']}  (Shop: {d['link']})")
-        write_wrap("Affirmation", d["affirm"])
-        write_wrap("Mudra", d["mudra"])
-        write_wrap("Essential oil", d["oil"])
-        write_wrap("Food focus", d["food"])
-        write_wrap("Journal prompt", d["journal"])
-        write_wrap("Mini-ritual", d["ritual"])
+        y = draw_label_value("Why now", d["why"], y, 60)
+        y = draw_label_value("Do this next", d["do"], y, 60)
+        y = draw_label_value("Crystal", f"{d['crystal']}  (Shop: {d['link']})", y, 40)
+        y = draw_label_value("Affirmation", d["affirm"], y, 40)
+        y = draw_label_value("Mudra", d["mudra"], y, 40)
+        y = draw_label_value("Essential oil", d["oil"], y, 40)
+        y = draw_label_value("Food focus", d["food"], y, 40)
+        y = draw_label_value("Journal prompt", d["journal"], y, 40)
+        y = draw_label_value("Mini-ritual", d["ritual"], y, 60)
 
         c.showPage(); c.save()
 
