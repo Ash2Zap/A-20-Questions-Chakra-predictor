@@ -1,0 +1,6 @@
+# Chakra Insight App Requirements
+streamlit>=1.38.0
+pandas
+numpy
+matplotlib
+reportlab  # for optional PDF reports
